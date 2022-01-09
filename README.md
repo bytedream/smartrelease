@@ -1,4 +1,4 @@
-# smartrelease - Generate links to release assets dynamically
+# smartrelease - Redirect to release assets dynamically
 
 [Releases](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases) are an essential feature of github (or other platforms like [gitea](https://gitea.io)) and the assets you can attach are pretty useful if you want to pre-compile a binary for example.
 But linking to these assets directly in your README can be pretty annoying if every of your release asset has a version number in it, for example `program-v1.0.0`, and with every release the version number changes, and you have to change the direct link to it in your README.
