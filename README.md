@@ -6,7 +6,7 @@ And this is where **smartrelease** enters the game.
 It provides a simple yet powerful api endpoint which will redirect the user directly to the latest release asset you've specified in the api url. 
 
 <p align="center">
-  <a href="https://github.com/ByteDream/Yamete-Kudasai/releases/latest">
+  <a href="https://github.com/ByteDream/smartrelease/releases/latest">
     <img src="https://img.shields.io/github/v/release/ByteDream/smartrelease?style=flat-square" alt="Latest release">
   </a>
   <a href="https://github.com/ByteDream/smartrelease/blob/master/LICENSE">
