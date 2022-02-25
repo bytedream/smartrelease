@@ -80,7 +80,7 @@ These wildcards are currently supported:
   In `smartrelease-v1.21.5-rc4`, `5` is the patch version number.
 - `pre`
 
-  _The pre-release number_. It can be a mix of numbers and letters (without any special character between).
+  _The pre-release number_. It can be a mix of numbers and letters (without any special characters between).
   In `smartrelease-v1.21.5-rc4`, `rc4` is the pre-release number.
 - `tag`
 
@@ -123,7 +123,7 @@ The result looks like this: [Now with gitea!](https://smartrelease.bytedream.org
 ## Official instance
 
 The official instance is hosted on `https://smartrelease.bytedream.org`.
-It has regex disabled and a maximal pattern length of 70 character.
+It has regex disabled and a maximal pattern length of 70 characters.
 
 So if you want, for example, using the official api for this repo, the following link will do it:
 ```
@@ -135,7 +135,7 @@ I also recommend you to visit this repo from time to time to see if something wi
 
 ## Self-hosting
 
-_All following instructions are specified for linux, but at least [building](#build-it-from-source) should on every platform too_.
+_All following instructions are specified for linux, but at least [building](#build-it-from-source) should be possible on every platform_.
 
 ### Docker
 
