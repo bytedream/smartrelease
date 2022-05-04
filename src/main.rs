@@ -18,6 +18,7 @@ lazy_static! {
     static ref ENABLE_REGEX: bool = env_lookup("ENABLE_REGEX", false);
     static ref MAX_PATTERN_LEN: i32 = env_lookup("MAX_PATTER_LEN", 70);
 
+    static ref HTTPS_ONLY: bool = env_lookup("HTTPS_ONLY", true);
     static ref ENABLE_CUSTOM_HOSTS: bool = env_lookup("ENABLE_CUSTOM_HOSTS", false);
 
     static ref TAG_PATTERN: Regex = Regex::new(r"(?P<major>\d+)([.-_](?P<minor>\d+)([.-_](?P<patch>\d+))?([.-_]?(?P<pre>[\w\d]+))?)?").unwrap();
@@ -98,7 +99,7 @@ async fn request_github(user: &str, repo: &str, pattern: &str, query: web::Query
     }
 
     let mut res = client()
-        .get(format!("https://api.github.com/repos/{}/{}/releases/latest", user, repo))
+        .get(format!("{}://api.github.com/repos/{}/{}/releases/latest", if *HTTPS_ONLY { "https" } else { "http" }, user, repo))
         .header("Accept", "application/vnd.github.v3+json")
         .header("User-Agent", USER_AGENT.as_str())
         .send()
@@ -114,7 +115,7 @@ async fn request_gitea(host: &str, user: &str, repo: &str, pattern: &str, query:
     }
 
     let mut res = client()
-        .get(format!("{}://{}/api/v1/repos/{}/{}/releases?limit=1", if env_lookup("HTTPS_ONLY", true) { "HTTPS" } else { "HTTP" }, host, user, repo))
+        .get(format!("{}://{}/api/v1/repos/{}/{}/releases?limit=1", if *HTTPS_ONLY { "https" } else { "http" }, host, user, repo))
         .header(http::header::CONTENT_TYPE, "application/json")
         .header(http::header::USER_AGENT, USER_AGENT.as_str())
         .send()
