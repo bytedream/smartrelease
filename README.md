@@ -191,6 +191,20 @@ Default is `false`.
 Limits the maximal length the pattern can have.
 Default is `70`.
 
+### `HTTPS_ONLY`
+
+If requests should always be made with https connections. Default is `true`.
+
+### `ENABLE_CUSTOM_HOSTS`
+
+If custom hosted instances of git servers should be supported too. Default is `false`.
+
+The url scheme of using a custom git server follows this:
+<pre>
+<code>https://example.com/custom/:host/<a href="#platform">:platform</a>/<a href="#owner">:owner</a>/<a href="#repository">:repository</a>/<a href="#pattern">:pattern</a></code>
+</pre>
+**:host** is the url of the custom git server host. Subpaths are currently not supported.
+
 ## Warnings
 
 It is recommended to limit the pattern length with [`MAX_PATTER_LEN`](#max_patter_len) if [`ENABLE_REGEX`](#enable_regex) is enabled since a too long pattern which is too complex could lead to an, wanted or unwanted, [ReDoS](https://en.wikipedia.org/wiki/ReDoS) attack.

@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use actix_web::{App, dev, Error, get, http, HttpRequest, HttpResponse, HttpServer, Result, web};
 use actix_web::client::{Client, Connector};
-use actix_web::error::{ErrorInternalServerError, ErrorNotFound, ErrorUriTooLong};
+use actix_web::error::{ErrorBadRequest, ErrorInternalServerError, ErrorNotFound, ErrorUriTooLong};
 use actix_web::middleware::errhandlers::{ErrorHandlerResponse, ErrorHandlers};
 use dotenv::dotenv;
 use lazy_static::lazy_static;
@@ -15,13 +15,15 @@ use regex::{escape, Regex};
 use serde::Deserialize;
 
 lazy_static! {
-    pub static ref ENABLE_REGEX: bool = env_lookup::<bool>("ENABLE_REGEX", false).unwrap();
-    pub static ref MAX_PATTERN_LEN: i32 = env_lookup::<i32>("MAX_PATTER_LEN", 70).unwrap();
+    static ref ENABLE_REGEX: bool = env_lookup("ENABLE_REGEX", false);
+    static ref MAX_PATTERN_LEN: i32 = env_lookup("MAX_PATTER_LEN", 70);
 
-    pub static ref TAG_PATTERN: Regex = Regex::new(r"(?P<major>\d+)([.-_](?P<minor>\d+)([.-_](?P<patch>\d+))?([.-_]?(?P<pre>[\w\d]+))?)?").unwrap();
-    pub static ref REPLACE_PATTERN: Regex = Regex::new(r"\{\w*?}").unwrap();
+    static ref ENABLE_CUSTOM_HOSTS: bool = env_lookup("ENABLE_CUSTOM_HOSTS", false);
 
-    pub static ref USER_AGENT: String = format!("smartrelease/{}", env_lookup::<String>("CARGO_PKG_VERSION", "".to_string()).unwrap());
+    static ref TAG_PATTERN: Regex = Regex::new(r"(?P<major>\d+)([.-_](?P<minor>\d+)([.-_](?P<patch>\d+))?([.-_]?(?P<pre>[\w\d]+))?)?").unwrap();
+    static ref REPLACE_PATTERN: Regex = Regex::new(r"\{\w*?}").unwrap();
+
+    static ref USER_AGENT: String = format!("smartrelease/{}", env_lookup::<String>("CARGO_PKG_VERSION", "".to_string()));
 }
 
 #[derive(Deserialize)]
@@ -58,19 +60,7 @@ async fn github(
     web::Path((user, repo, pattern)): web::Path<(String, String, String)>,
     query: web::Query<Query>
 ) -> Result<HttpResponse> {
-    if let Some(err) = pre_check(&pattern) {
-        return Err(err)
-    }
-
-    let mut res = client()
-        .get(format!("https://api.github.com/repos/{}/{}/releases/latest", user, repo))
-        .header("Accept", "application/vnd.github.v3+json")
-        .header("User-Agent", USER_AGENT.as_str())
-        .send()
-        .await?;
-    let mut github = res.json::<GitHub>().await?;
-
-    process(&pattern, &mut github.assets, query.into_inner(), &github.tag_name)
+    request_github(user.as_str(), repo.as_str(), pattern.as_str(), query).await
 }
 
 #[derive(Deserialize)]
@@ -84,15 +74,54 @@ async fn gitea(
     web::Path((user, repo, pattern)): web::Path<(String, String, String)>,
     query: web::Query<Query>
 ) -> Result<HttpResponse> {
+    request_gitea("gitea.com", user.as_str(), repo.as_str(), pattern.as_str(), query).await
+}
+
+#[get("/custom/{host}/{platform}/{user}/{repo}/{pattern}")]
+async fn custom(
+    web::Path((host, platform, user, repo, pattern)): web::Path<(String, String, String, String, String)>,
+    query: web::Query<Query>
+) -> Result<HttpResponse> {
+    if *ENABLE_CUSTOM_HOSTS {
+        match platform.as_str() {
+            "gitea" => request_gitea(host.as_str(), user.as_str(), repo.as_str(), pattern.as_str(), query).await,
+            _ => Err(ErrorBadRequest("Invalid host"))
+        }
+    } else {
+        Err(ErrorNotFound("Custom hosts are disabled"))
+    }
+}
+
+async fn request_github(user: &str, repo: &str, pattern: &str, query: web::Query<Query>) -> Result<HttpResponse> {
+    if let Some(err) = pre_check(pattern) {
+        return Err(err)
+    }
+
     let mut res = client()
-        .get(format!("https://gitea.com/api/v1/repos/{}/{}/releases?limit=1", user, repo))
+        .get(format!("https://api.github.com/repos/{}/{}/releases/latest", user, repo))
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("User-Agent", USER_AGENT.as_str())
+        .send()
+        .await?;
+    let mut result = res.json::<GitHub>().await?;
+
+    process(&pattern, &mut result.assets, query.into_inner(), &result.tag_name)
+}
+
+async fn request_gitea(host: &str, user: &str, repo: &str, pattern: &str, query: web::Query<Query>) -> Result<HttpResponse> {
+    if let Some(err) = pre_check(pattern) {
+        return Err(err)
+    }
+
+    let mut res = client()
+        .get(format!("{}://{}/api/v1/repos/{}/{}/releases?limit=1", if env_lookup("HTTPS_ONLY", true) { "HTTPS" } else { "HTTP" }, host, user, repo))
         .header(http::header::CONTENT_TYPE, "application/json")
         .header(http::header::USER_AGENT, USER_AGENT.as_str())
         .send()
         .await?;
-    let mut gitea = res.json::<[Gitea; 1]>().await?;
+    let mut result = res.json::<[Gitea; 1]>().await?;
 
-    return process(&pattern, &mut gitea[0].assets, query.into_inner(), &gitea[0].tag_name)
+    return process(pattern, &mut result[0].assets, query.into_inner(), &result[0].tag_name )
 }
 
 fn redirect_error<B>(res: dev::ServiceResponse<B>) -> Result<ErrorHandlerResponse<B>> {
@@ -101,8 +130,6 @@ fn redirect_error<B>(res: dev::ServiceResponse<B>) -> Result<ErrorHandlerRespons
     }
 
     let split_path: Vec<&str> = res.request().uri().path().split("/").collect();
-
-
 
     info!("{} {}: got {} ({})",
         ip(res.request()),
@@ -147,11 +174,12 @@ fn client() -> Client {
         .finish();
 }
 
-fn env_lookup<F: FromStr>(name: &str, default: F) -> std::result::Result<F, F::Err> {
+fn env_lookup<F: FromStr>(name: &str, default: F) -> F {
     if let Ok(envvar) = env::var(name) {
-        return envvar.parse::<F>();
+        envvar.parse::<F>().unwrap_or(default)
+    } else {
+        default
     }
-    Ok(default)
 }
 
 fn ip(request: &HttpRequest) -> String {
@@ -160,15 +188,15 @@ fn ip(request: &HttpRequest) -> String {
         .rsplit_once(":").unwrap().0.to_string()
 }
 
-fn pre_check(pattern: &String) -> Option<Error> {
+fn pre_check(pattern: &str) -> Option<Error> {
     // if MAX_PATTERN_LEN is -1 or below the len checking is disabled
-    if *MAX_PATTERN_LEN > -1 && REPLACE_PATTERN.replace_all(pattern.as_str(), "").len() > *MAX_PATTERN_LEN as usize {
+    if *MAX_PATTERN_LEN > -1 && REPLACE_PATTERN.replace_all(pattern, "").len() > *MAX_PATTERN_LEN as usize {
         return Some(ErrorUriTooLong(format!("Pattern / last url path must not exceed {} characters", *MAX_PATTERN_LEN)))
     }
     None
 }
 
-fn process(pattern: &String, assets: &mut Vec<Assets>, query: Query, tag_name: &String) -> Result<HttpResponse> {
+fn process(pattern: &str, assets: &mut Vec<Assets>, query: Query, tag_name: &String) -> Result<HttpResponse> {
     let re: Regex;
     let mut replaced = replace(
         pattern.to_string(),
@@ -253,13 +281,14 @@ async fn main() -> io::Result<()> {
         .filter_level(Info)
         .init();
 
-    let host = env_lookup::<String>("HOST", "0.0.0.0".to_string()).unwrap();
-    let port = env_lookup::<i16>("PORT", 8080).unwrap();
+    let host = env_lookup::<String>("HOST", "0.0.0.0".to_string());
+    let port = env_lookup::<i16>("PORT", 8080);
 
     let server = HttpServer::new(|| {
         App::new()
             .service(github)
             .service(gitea)
+            .service(custom)
             .service(
                 web::resource("/").route(web::get().to(|| async {
                     HttpResponse::Found()
