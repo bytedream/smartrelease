@@ -1,30 +1,32 @@
-use std::{env, io};
-use std::collections::HashMap;
-use std::io::Write;
-use std::str::FromStr;
-use std::time::Duration;
-use actix_web::{App, dev, Error, get, http, HttpRequest, HttpResponse, HttpServer, Result, web};
-use actix_web::client::{Client, Connector};
 use actix_web::error::{ErrorBadRequest, ErrorInternalServerError, ErrorNotFound, ErrorUriTooLong};
-use actix_web::middleware::errhandlers::{ErrorHandlerResponse, ErrorHandlers};
+use actix_web::middleware::{ErrorHandlerResponse, ErrorHandlers};
+use actix_web::{dev, get, http, web, App, Error, HttpRequest, HttpResponse, HttpServer, Result};
 use dotenv::dotenv;
 use lazy_static::lazy_static;
 use log::info;
 use log::LevelFilter::Info;
 use regex::{escape, Regex};
+use reqwest::Client;
 use serde::Deserialize;
+use std::collections::HashMap;
+use std::io::Write;
+use std::str::FromStr;
+use std::{env, io};
 
 lazy_static! {
     static ref ENABLE_REGEX: bool = env_lookup("ENABLE_REGEX", false);
     static ref MAX_PATTERN_LEN: i32 = env_lookup("MAX_PATTER_LEN", 70);
-
     static ref HTTPS_ONLY: bool = env_lookup("HTTPS_ONLY", true);
     static ref ENABLE_CUSTOM_HOSTS: bool = env_lookup("ENABLE_CUSTOM_HOSTS", false);
-
-    static ref TAG_PATTERN: Regex = Regex::new(r"(?P<major>\d+)([.-_](?P<minor>\d+)([.-_](?P<patch>\d+))?([.-_]?(?P<pre>[\w\d]+))?)?").unwrap();
+    static ref TAG_PATTERN: Regex = Regex::new(
+        r"(?P<major>\d+)([.-_](?P<minor>\d+)([.-_](?P<patch>\d+))?([.-_]?(?P<pre>[\w\d]+))?)?"
+    )
+    .unwrap();
     static ref REPLACE_PATTERN: Regex = Regex::new(r"\{\w*?}").unwrap();
-
-    static ref USER_AGENT: String = format!("smartrelease/{}", env_lookup::<String>("CARGO_PKG_VERSION", "".to_string()));
+    static ref USER_AGENT: String = format!(
+        "smartrelease/{}",
+        env_lookup::<String>("CARGO_PKG_VERSION", "".to_string())
+    );
 }
 
 #[derive(Deserialize)]
@@ -41,138 +43,197 @@ struct Query {
     minor: Option<String>,
     patch: Option<String>,
     pre: Option<String>,
-    tag: Option<String>
+    tag: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct Assets {
     name: String,
-    browser_download_url: String
+    browser_download_url: String,
 }
 
 #[derive(Deserialize)]
 struct GitHub {
     tag_name: String,
-    assets: Vec<Assets>
+    assets: Vec<Assets>,
 }
 
 #[get("/github/{user}/{repo}/{pattern}")]
 async fn github(
-    web::Path((user, repo, pattern)): web::Path<(String, String, String)>,
-    query: web::Query<Query>
+    path: web::Path<(String, String, String)>,
+    query: web::Query<Query>,
 ) -> Result<HttpResponse> {
+    let (user, repo, pattern) = path.into_inner();
+
     request_github(user.as_str(), repo.as_str(), pattern.as_str(), query).await
 }
 
 #[derive(Deserialize)]
 struct Gitea {
     tag_name: String,
-    assets: Vec<Assets>
+    assets: Vec<Assets>,
 }
 
 #[get("/gitea/{user}/{repo}/{pattern}")]
 async fn gitea(
-    web::Path((user, repo, pattern)): web::Path<(String, String, String)>,
-    query: web::Query<Query>
+    path: web::Path<(String, String, String)>,
+    query: web::Query<Query>,
 ) -> Result<HttpResponse> {
-    request_gitea("gitea.com", user.as_str(), repo.as_str(), pattern.as_str(), query).await
+    let (user, repo, pattern) = path.into_inner();
+
+    request_gitea(
+        "gitea.com",
+        user.as_str(),
+        repo.as_str(),
+        pattern.as_str(),
+        query,
+    )
+    .await
 }
 
 #[get("/custom/{host}/{platform}/{user}/{repo}/{pattern}")]
 async fn custom(
-    web::Path((host, platform, user, repo, pattern)): web::Path<(String, String, String, String, String)>,
-    query: web::Query<Query>
+    path: web::Path<(String, String, String, String, String)>,
+    query: web::Query<Query>,
 ) -> Result<HttpResponse> {
+    let (host, platform, user, repo, pattern) = path.into_inner();
+
     if *ENABLE_CUSTOM_HOSTS {
         match platform.as_str() {
-            "gitea" => request_gitea(host.as_str(), user.as_str(), repo.as_str(), pattern.as_str(), query).await,
-            _ => Err(ErrorBadRequest("Invalid host"))
+            "gitea" => {
+                request_gitea(
+                    host.as_str(),
+                    user.as_str(),
+                    repo.as_str(),
+                    pattern.as_str(),
+                    query,
+                )
+                .await
+            }
+            _ => Err(ErrorBadRequest("Invalid host")),
         }
     } else {
         Err(ErrorNotFound("Custom hosts are disabled"))
     }
 }
 
-async fn request_github(user: &str, repo: &str, pattern: &str, query: web::Query<Query>) -> Result<HttpResponse> {
+async fn request_github(
+    user: &str,
+    repo: &str,
+    pattern: &str,
+    query: web::Query<Query>,
+) -> Result<HttpResponse> {
     if let Some(err) = pre_check(pattern) {
-        return Err(err)
+        return Err(err);
     }
 
-    let mut res = client()
-        .get(format!("{}://api.github.com/repos/{}/{}/releases/latest", if *HTTPS_ONLY { "https" } else { "http" }, user, repo))
+    let res = Client::new()
+        .get(format!(
+            "{}://api.github.com/repos/{}/{}/releases/latest",
+            if *HTTPS_ONLY { "https" } else { "http" },
+            user,
+            repo
+        ))
         .header("Accept", "application/vnd.github.v3+json")
         .header("User-Agent", USER_AGENT.as_str())
         .send()
-        .await?;
-    let mut result = res.json::<GitHub>().await?;
+        .await
+        .map_err(ErrorInternalServerError)?;
+    let mut result = res
+        .json::<GitHub>()
+        .await
+        .map_err(ErrorInternalServerError)?;
 
-    process(&pattern, &mut result.assets, query.into_inner(), &result.tag_name)
+    process(
+        pattern,
+        &mut result.assets,
+        query.into_inner(),
+        &result.tag_name,
+    )
 }
 
-async fn request_gitea(host: &str, user: &str, repo: &str, pattern: &str, query: web::Query<Query>) -> Result<HttpResponse> {
+async fn request_gitea(
+    host: &str,
+    user: &str,
+    repo: &str,
+    pattern: &str,
+    query: web::Query<Query>,
+) -> Result<HttpResponse> {
     if let Some(err) = pre_check(pattern) {
-        return Err(err)
+        return Err(err);
     }
 
-    let mut res = client()
-        .get(format!("{}://{}/api/v1/repos/{}/{}/releases?limit=1", if *HTTPS_ONLY { "https" } else { "http" }, host, user, repo))
+    let res = Client::new()
+        .get(format!(
+            "{}://{}/api/v1/repos/{}/{}/releases?limit=1",
+            if *HTTPS_ONLY { "https" } else { "http" },
+            host,
+            user,
+            repo
+        ))
         .header(http::header::CONTENT_TYPE, "application/json")
         .header(http::header::USER_AGENT, USER_AGENT.as_str())
         .send()
-        .await?;
-    let mut result = res.json::<[Gitea; 1]>().await?;
+        .await
+        .map_err(ErrorInternalServerError)?;
+    let mut result = res
+        .json::<[Gitea; 1]>()
+        .await
+        .map_err(ErrorInternalServerError)?;
 
-    return process(pattern, &mut result[0].assets, query.into_inner(), &result[0].tag_name )
+    process(
+        pattern,
+        &mut result[0].assets,
+        query.into_inner(),
+        &result[0].tag_name,
+    )
 }
 
 fn redirect_error<B>(res: dev::ServiceResponse<B>) -> Result<ErrorHandlerResponse<B>> {
     if res.request().uri().path() == "/favicon" {
-        return Ok(ErrorHandlerResponse::Response(res))
+        return Ok(ErrorHandlerResponse::Response(res.map_into_left_body()));
     }
 
-    let split_path: Vec<&str> = res.request().uri().path().split("/").collect();
+    let split_path: Vec<&str> = res.request().uri().path().split('/').collect();
 
-    info!("{} {}: got {} ({})",
+    info!(
+        "{} {}: got {} ({})",
         ip(res.request()),
         res.request().path(),
         res.status().as_u16(),
-        res.response().error().map_or_else(|| String::new(), |v| v.to_string()));
+        res.response()
+            .error()
+            .map_or_else(String::new, |v| v.to_string())
+    );
 
     if split_path.len() >= 4 {
         let location = match *split_path.get(1).unwrap() {
-            "github" => format!("https://github.com/{}/{}/releases/latest",
-                                *split_path.get(2).unwrap(),
-                                *split_path.get(3).unwrap()),
-            "gitea" => format!("https://gitea.com/{}/{}/releases",
-                               *split_path.get(2).unwrap(),
-                               *split_path.get(3).unwrap()),
-            _ => "".to_string()
+            "github" => format!(
+                "https://github.com/{}/{}/releases/latest",
+                *split_path.get(2).unwrap(),
+                *split_path.get(3).unwrap()
+            ),
+            "gitea" => format!(
+                "https://gitea.com/{}/{}/releases",
+                *split_path.get(2).unwrap(),
+                *split_path.get(3).unwrap()
+            ),
+            _ => "".to_string(),
         };
 
-        if location != "" {
+        if !location.is_empty() {
             return Ok(ErrorHandlerResponse::Response(
                 res.into_response(
                     HttpResponse::Found()
-                        .header(http::header::LOCATION, location)
+                        .insert_header((http::header::LOCATION, location))
                         .finish()
-                        .into_body()
-                )
-            ))
+                        .map_into_right_body(),
+                ),
+            ));
         }
     }
 
-    Ok(ErrorHandlerResponse::Response(res))
-}
-
-fn client() -> Client {
-    return Client::builder()
-        .timeout(Duration::from_secs(5))
-        .connector(
-            Connector::new()
-                .timeout(Duration::from_secs(3))
-                .finish()
-        )
-        .finish();
+    Ok(ErrorHandlerResponse::Response(res.map_into_left_body()))
 }
 
 fn env_lookup<F: FromStr>(name: &str, default: F) -> F {
@@ -185,20 +246,34 @@ fn env_lookup<F: FromStr>(name: &str, default: F) -> F {
 
 fn ip(request: &HttpRequest) -> String {
     request
-        .connection_info().realip_remote_addr().unwrap()
-        .rsplit_once(":").unwrap().0.to_string()
+        .connection_info()
+        .realip_remote_addr()
+        .unwrap()
+        .rsplit_once(':')
+        .unwrap()
+        .0
+        .to_string()
 }
 
 fn pre_check(pattern: &str) -> Option<Error> {
     // if MAX_PATTERN_LEN is -1 or below the len checking is disabled
-    if *MAX_PATTERN_LEN > -1 && REPLACE_PATTERN.replace_all(pattern, "").len() > *MAX_PATTERN_LEN as usize {
-        return Some(ErrorUriTooLong(format!("Pattern / last url path must not exceed {} characters", *MAX_PATTERN_LEN)))
+    if *MAX_PATTERN_LEN > -1
+        && REPLACE_PATTERN.replace_all(pattern, "").len() > *MAX_PATTERN_LEN as usize
+    {
+        return Some(ErrorUriTooLong(format!(
+            "Pattern / last url path must not exceed {} characters",
+            *MAX_PATTERN_LEN
+        )));
     }
     None
 }
 
-fn process(pattern: &str, assets: &mut Vec<Assets>, query: Query, tag_name: &String) -> Result<HttpResponse> {
-    let re: Regex;
+fn process(
+    pattern: &str,
+    assets: &mut Vec<Assets>,
+    query: Query,
+    tag_name: &String,
+) -> Result<HttpResponse> {
     let mut replaced = replace(
         pattern.to_string(),
         tag_name.to_string(),
@@ -207,20 +282,23 @@ fn process(pattern: &str, assets: &mut Vec<Assets>, query: Query, tag_name: &Str
             ("minor", query.minor),
             ("patch", query.patch),
             ("pre", query.pre),
-            ("tag", query.tag)
-        ].iter().cloned().collect(),
-        query.clear_unknown.unwrap_or(true)
+            ("tag", query.tag),
+        ]
+        .iter()
+        .cloned()
+        .collect(),
+        query.clear_unknown.unwrap_or(true),
     );
     if !*ENABLE_REGEX {
         replaced = escape(replaced.as_str())
     }
 
-    match Regex::new(replaced.as_str()) {
-        Ok(r) => re = r,
+    let re = match Regex::new(replaced.as_str()) {
+        Ok(r) => r,
         Err(e) => {
             return Err(ErrorInternalServerError(e));
         }
-    }
+    };
 
     if query.reverse.unwrap_or(false) {
         assets.reverse()
@@ -228,14 +306,24 @@ fn process(pattern: &str, assets: &mut Vec<Assets>, query: Query, tag_name: &Str
 
     for asset in assets {
         if re.is_match(asset.name.as_str()) {
-            return Ok(HttpResponse::Found().set_header(http::header::LOCATION, format!("{}", asset.browser_download_url)).finish())
+            return Ok(HttpResponse::Found()
+                .insert_header((
+                    http::header::LOCATION,
+                    asset.browser_download_url.to_string(),
+                ))
+                .finish());
         }
     }
 
     Err(ErrorNotFound("No matching asset was found"))
 }
 
-fn replace(pattern: String, tag: String, alternatives: HashMap<&str, Option<String>>, clear_unknown: bool) -> String {
+fn replace(
+    pattern: String,
+    tag: String,
+    alternatives: HashMap<&str, Option<String>>,
+    clear_unknown: bool,
+) -> String {
     let mut result = pattern;
 
     if let Some(regex_match) = TAG_PATTERN.captures(tag.as_str()) {
@@ -290,22 +378,23 @@ async fn main() -> io::Result<()> {
             .service(github)
             .service(gitea)
             .service(custom)
-            .service(
-                web::resource("/").route(web::get().to(|| async {
-                    HttpResponse::Found()
-                        .header(http::header::LOCATION, "https://github.com/ByteDream/smartrelease")
-                        .finish()
-                })
-            ))
+            .service(web::resource("/").route(web::get().to(|| async {
+                HttpResponse::Found()
+                    .insert_header((
+                        http::header::LOCATION,
+                        "https://github.com/ByteDream/smartrelease",
+                    ))
+                    .finish()
+            })))
             .wrap(
                 ErrorHandlers::new()
                     .handler(http::StatusCode::BAD_REQUEST, redirect_error)
                     .handler(http::StatusCode::NOT_FOUND, redirect_error)
-                    .handler(http::StatusCode::GATEWAY_TIMEOUT, redirect_error)
+                    .handler(http::StatusCode::GATEWAY_TIMEOUT, redirect_error),
             )
     })
-        .bind(format!("{}:{}", host, port))?
-        .run();
+    .bind(format!("{}:{}", host, port))?
+    .run();
 
     info!(
         "Started server on {}:{} with regex {} and a max pattern len of {}",
