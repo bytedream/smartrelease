@@ -1,4 +1,4 @@
-FROM rust:1.57-alpine
+FROM rust:alpine as builder
 
 WORKDIR /smartrelease
 
@@ -8,8 +8,11 @@ RUN apk update && \
     apk add musl-dev && \
     rm -rf /var/cache/apk
 
-RUN cargo build --release && \
-    ln -s target/release/smartrelease .
+RUN cargo build --release
+
+FROM alpine:latest
+
+COPY --from=builder /smartrelease/target/release/smartrelease .
 
 EXPOSE 8080
 
