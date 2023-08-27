@@ -101,33 +101,33 @@ In case your asset name is not supported, but you want it to be supported, feel 
 For the example the [official instance](#official-instance) is used as host.
 
 Latest release for this repo.
-The result looks like this: [Latest release](https://smartrelease.bytedream.org/github/ByteDream/smartrelease/smartrelease-v{major}.{minor}.{patch}_linux)
+The result looks like this: [Latest release](https://smartrelease.bytedream.dev/github/ByteDream/smartrelease/smartrelease-v{major}.{minor}.{patch}_linux)
 ```
-[Latest release](https://smartrelease.bytedream.org/github/ByteDream/smartrelease/smartrelease-v{major}.{minor}.{patch}_linux)
+[Latest release](https://smartrelease.bytedream.dev/github/ByteDream/smartrelease/smartrelease-v{major}.{minor}.{patch}_linux)
 ```
 
 We can also use [shields.io](https://shields.io) to make it look more appealing to the user.
-The result looks like this: [![Latest release](https://img.shields.io/github/v/release/ByteDream/smartrelease?style=flat-square)](https://smartrelease.bytedream.org/github/ByteDream/smartrelease/smartrelease-v{major}.{minor}.{patch}_linux)
+The result looks like this: [![Latest release](https://img.shields.io/github/v/release/ByteDream/smartrelease?style=flat-square)](https://smartrelease.bytedream.dev/github/ByteDream/smartrelease/smartrelease-v{major}.{minor}.{patch}_linux)
 ```
-[![Latest release](https://img.shields.io/github/v/release/ByteDream/smartrelease?style=flat-square)](https://smartrelease.bytedream.org/github/ByteDream/smartrelease/smartrelease-v{major}.{minor}.{patch}_linux)
+[![Latest release](https://img.shields.io/github/v/release/ByteDream/smartrelease?style=flat-square)](https://smartrelease.bytedream.dev/github/ByteDream/smartrelease/smartrelease-v{major}.{minor}.{patch}_linux)
 ```
 
 And now with the official Gitea instance (Gitea is a great open-source based alternative to GitHub, if you didn't knew it already)
-The result looks like this: [Now with gitea!](https://smartrelease.bytedream.org/gitea/gitea/tea/tea-{major}.{minor}.{patch}-linux-amd64)
+The result looks like this: [Now with gitea!](https://smartrelease.bytedream.dev/gitea/gitea/tea/tea-{major}.{minor}.{patch}-linux-amd64)
 ```
-[Now with gitea!](https://smartrelease.bytedream.org/gitea/gitea/tea/tea-{major}.{minor}.{patch}-linux-amd64)
+[Now with gitea!](https://smartrelease.bytedream.dev/gitea/gitea/tea/tea-{major}.{minor}.{patch}-linux-amd64)
 ```
 
 ## Hosting
 
 ## Official instance
 
-The official instance is hosted on `https://smartrelease.bytedream.org`.
+The official instance is hosted on `https://smartrelease.bytedream.dev`.
 It has regex disabled and a maximal pattern length of 70 characters.
 
 So if you want, for example, using the official api for this repo, the following link will do it:
 ```
-https://smartrelease.bytedream.org/github/ByteDream/smartrelease/smartrelease-v{major}.{minor}.{patch}_linux
+https://smartrelease.bytedream.dev/github/ByteDream/smartrelease/smartrelease-v{major}.{minor}.{patch}_linux
 ```
 
 Nevertheless, I recommend you to host your own instance if you have the capabilities to do so since I cannot guarantee that my server will have a 100% uptime (but I will do my best to keep it online).
@@ -141,16 +141,14 @@ _All following instructions are specified for linux, but at least [building](#bu
 
 **Make sure you have [docker](https://docker.com) installed**.
 
-Clone the repo via `git clone` or download the [zipfile](https://github.com/ByteDream/crunchyroll-go/archive/refs/heads/master.zip) and extract it.
-Open a shell, enter the directory and follow the following commands:
+You can simply pull and run the docker image from [docker hub](https://hub.docker.com/r/bytedream/smartrelease).
 ```shell
-[~/smartrelease]$ docker build -t smartrelease .
-[~/smartrelease]$ docker run -p 8080:8080 smartrelease
+[~]$ docker run --name smartrelease -p 8080:8080 bytedream/smartrelease:latest
 ```
 
 ### Binary
 
-Download the latest linux binary from [here](https://smartrelease.bytedream.org/github/ByteDream/smartrelease/smartrelease-v{major}.{minor}.{patch}_linux) (built with musl, so should work on libc and musl systems).
+Download the latest linux binary from [here](https://smartrelease.bytedream.dev/github/ByteDream/smartrelease/smartrelease-v{major}.{minor}.{patch}_linux) (built with musl, so should work on libc and musl systems).
 Now simply execute binary and the server is up and running:
 ```shell
 [~]$ ./smartrelease-v<version>_linux
