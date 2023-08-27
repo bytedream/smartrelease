@@ -1,7 +1,10 @@
 [package]
 name = "smartrelease"
 version = "0.1.0"
+authors = ["ByteDream"]
 edition = "2021"
+description = "Redirect to release assets dynamically"
+license = "MIT"
 
 [dependencies]
 actix-web = { version = "4.3", features = ["rustls"] }
