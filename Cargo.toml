@@ -1,6 +1,6 @@
 [package]
 name = "smartrelease"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["ByteDream"]
 edition = "2021"
 description = "Redirect to release assets dynamically"
@@ -21,3 +21,4 @@ serde_json = "1.0"
 lto = true
 panic = "abort"
 opt-level = "z"
+strip = true
